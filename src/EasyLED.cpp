@@ -627,6 +627,7 @@ void EasyLED::_blinkTick() {
             _blinkState = _BlinkState::BLINK_OFF;
             _lastEvent = now;
             _blinkCount++;
+
             if (_blinkTarget > 0 && _blinkCount >= _blinkTarget) {
                 _blinkRunning = false;
                 _blinkState   = _BlinkState::IDLE;
@@ -637,6 +638,7 @@ void EasyLED::_blinkTick() {
             _blinkSetOn();
             _blinkState = _BlinkState::BLINK_ON;
             _lastEvent = now;
+
         }
         break;
 

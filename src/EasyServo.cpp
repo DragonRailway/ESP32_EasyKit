@@ -19,7 +19,7 @@ uint8_t EasyServo::_totalPins = 0;
 
 EasyServo::EasyServo() {
     _config.minAngle = 0.0f;
-    _config.maxAngle = 360.0f;
+    _config.maxAngle = 180.0f;
 }
 
 EasyServo::EasyServo(int pin) : EasyServo() {
@@ -39,8 +39,9 @@ int EasyServo::attach(int pin) {
 
 int EasyServo::attach(int pin, int minUs, int maxUs) {
     EasyKit::ServoConfig cfg = _config;
-    cfg.minUs = minUs;
-    cfg.maxUs = maxUs;
+    cfg.minUs    = minUs;
+    cfg.maxUs    = maxUs;
+    cfg.centerUs = (minUs + maxUs) / 2;  // symmetric neutral pulse
     EasyKit::Result r = attach(pin, cfg);
     return (r == EasyKit::Result::OK) ? pin : 0;
 }
@@ -54,6 +55,7 @@ EasyKit::Result EasyServo::attach(int pin, const EasyKit::ServoConfig& config) {
         existing->maxUs    = config.maxUs;
         existing->centerUs = config.centerUs;
         _lastPin = pin;
+        _config = config;  // keep angle limits + pulse bounds in sync
         _applyDuty();
         return EasyKit::Result::OK;
     }
@@ -71,10 +73,16 @@ EasyKit::Result EasyServo::attach(int pin, const EasyKit::ServoConfig& config) {
         _slot = EasyKit::MCPWMManager::instance().allocate();
         if (_slot.unit < 0) return EasyKit::Result::ERR_NO_FREE_OPERATOR;
 
+        // Select timer resolution to fit within 16-bit period register (max 65535 ticks)
+        _timerResHz = SERVO_TIMER_RESOLUTION_HZ;
+        if (config.freq > 0 && (_timerResHz / config.freq) > 65535) {
+            _timerResHz = 500000; // 500 kHz (2 µs/tick) for < 16 Hz
+        }
+
         timer_cfg.group_id      = _slot.unit;
         timer_cfg.clk_src       = MCPWM_TIMER_CLK_SRC_DEFAULT;
-        timer_cfg.resolution_hz = SERVO_TIMER_RESOLUTION_HZ; // 1 MHz → 1 µs/tick
-        timer_cfg.period_ticks  = SERVO_TIMER_RESOLUTION_HZ / config.freq;
+        timer_cfg.resolution_hz = _timerResHz;
+        timer_cfg.period_ticks  = _timerResHz / config.freq;
         timer_cfg.count_mode    = MCPWM_TIMER_COUNT_MODE_UP;
         if (mcpwm_new_timer(&timer_cfg, &_timer) != ESP_OK) return EasyKit::Result::ERR_HW_FAULT;
 
@@ -113,10 +121,19 @@ EasyKit::Result EasyServo::attach(int pin, const EasyKit::ServoConfig& config) {
     // Set actions
     mcpwm_generator_set_action_on_timer_event(gen, MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_HIGH));
     mcpwm_generator_set_action_on_compare_event(gen, MCPWM_GEN_COMPARE_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, cmpr, MCPWM_GEN_ACTION_LOW));
-    mcpwm_generator_set_force_level(gen, -1, true);
 
     EasyKit::GlobalPinManager::claimPin(pin, this);
-    mcpwm_comparator_set_compare_value(cmpr, config.centerUs);
+
+    // Start the shared timer on the first attach only, BEFORE writing the
+    // initial compare value so the hardware latches it on the first TEZ event.
+    if (_pinCount == 0) {
+        mcpwm_timer_enable(_timer);
+        mcpwm_timer_start_stop(_timer, MCPWM_TIMER_START_NO_STOP);
+    }
+
+    int initUs = angleToUs(_currentAngle, config.minUs, config.maxUs, config.minAngle, config.maxAngle);
+    uint32_t initTicks = ((uint32_t)initUs * _timerResHz) / SERVO_TIMER_RESOLUTION_HZ;
+    mcpwm_comparator_set_compare_value(cmpr, initTicks);
 
     entry->pin      = pin;
     entry->minUs    = config.minUs;
@@ -128,12 +145,7 @@ EasyKit::Result EasyServo::attach(int pin, const EasyKit::ServoConfig& config) {
     _totalPins++;
     _lastPin = pin;
     _attached = true;
-
-    // Start the shared timer on the first attach only.
-    if (_pinCount == 1) {
-        mcpwm_timer_enable(_timer);
-        mcpwm_timer_start_stop(_timer, MCPWM_TIMER_START_NO_STOP);
-    }
+    _config = config;  // keep angle limits + pulse bounds in sync
 
     return EasyKit::Result::OK;
 #else
@@ -256,7 +268,9 @@ float EasyServo::write(float value, float speed, float kIn, float kOut) {
 
     _durationMS = (uint32_t)((delta / moveSpeed) * 1000.0f);
     _startTimeMS = millis();
+    _lastUpdateMS = _startTimeMS;
     _moving = true;
+    _vNow = 0.0f;
 
     _applyDuty();
     wake();
@@ -298,14 +312,12 @@ void EasyServo::update() {
     _currentAngle = _startAngle + ye * (_targetAngle - _startAngle);
 
     // Calculate instantaneous velocity (deg/sec) for momentum hand-off
-    // delta_angle / delta_time_in_seconds
-    static uint32_t lastUpdate = 0;
     uint32_t now = millis();
-    float dt = (float)(now - lastUpdate) / 1000.0f;
+    float dt = (_lastUpdateMS > 0) ? (float)(now - _lastUpdateMS) / 1000.0f : 0.0f;
     if (dt > 0.0001f) {
         _vNow = (_currentAngle - lastAngle) / dt;
     }
-    lastUpdate = now;
+    _lastUpdateMS = now;
 
     _applyDuty();
 }
@@ -342,7 +354,11 @@ void EasyServo::_applyDuty() {
 #ifdef SOC_MCPWM_SUPPORTED
     for (uint8_t i = 0; i < _pinCount; i++) {
         int us = angleToUs(_currentAngle, _pins[i].minUs, _pins[i].maxUs, _config.minAngle, _config.maxAngle);
-        mcpwm_comparator_set_compare_value(_pins[i].cmpr, us);
+        uint32_t ticks = ((uint32_t)us * _timerResHz) / SERVO_TIMER_RESOLUTION_HZ;
+        if (ticks != _pins[i].lastTicks) {
+            _pins[i].lastTicks = ticks;
+            mcpwm_comparator_set_compare_value(_pins[i].cmpr, ticks);
+        }
     }
 #endif
 
@@ -374,8 +390,9 @@ void EasyServo::setEndpoints(int minUs, int maxUs) {
     _config.minUs = minUs;
     _config.maxUs = maxUs;
     for (uint8_t i = 0; i < _pinCount; i++) {
-        _pins[i].minUs = minUs;
-        _pins[i].maxUs = maxUs;
+        _pins[i].minUs    = minUs;
+        _pins[i].maxUs    = maxUs;
+        _pins[i].centerUs = (minUs + maxUs) / 2;
     }
     _applyDuty();
 }
@@ -386,8 +403,9 @@ void EasyServo::setEndpoints(int minUs, int maxUs, float minAngle, float maxAngl
     _config.minAngle = minAngle;
     _config.maxAngle = maxAngle;
     for (uint8_t i = 0; i < _pinCount; i++) {
-        _pins[i].minUs = minUs;
-        _pins[i].maxUs = maxUs;
+        _pins[i].minUs    = minUs;
+        _pins[i].maxUs    = maxUs;
+        _pins[i].centerUs = (minUs + maxUs) / 2;
     }
     _applyDuty();
 }
@@ -408,9 +426,12 @@ void EasyServo::setFrequency(uint16_t hz) {
     if (hz == 0) return;
     _config.freq = hz;
 #ifdef SOC_MCPWM_SUPPORTED
-    // Update the timer period in place — mirrors EasyMotor::setFrequency and
-    // preserves any in-progress easing move (no detach/attach teardown).
-    if (_timer) mcpwm_timer_set_period(_timer, SERVO_TIMER_RESOLUTION_HZ / hz);
+    if (_timer) {
+        uint32_t ticks = _timerResHz / hz;
+        if (ticks <= 65535) {
+            mcpwm_timer_set_period(_timer, ticks);
+        }
+    }
 #endif
 }
 

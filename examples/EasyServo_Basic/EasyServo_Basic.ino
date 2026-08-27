@@ -1,62 +1,59 @@
-/**
- * @file EasyServo_Basic.ino
- * @brief Basic servo sweep using ESP32_EasyKit.
- *
- * Demonstrates:
- *   - EasyServo.h drop-in replacement
- *   - attach(), write(degrees), writeMicroseconds()
- *   - read() / readMicroseconds()
- */
+#include <Arduino.h>
+#include <ESP32Servo.h>
 
-#include <ESP32_EasyKit.h>
+Servo servo1;
+Servo servo2;
 
-EasyServo myServo;
-
-const int SERVO_PIN = 35;
+const int SERVO_PIN1 = 5;       // S1
+const int SERVO_PIN2 = 7;       // S3
+const int POWER_LATCH_PIN = 15; // 5V rail enable
 
 void setup() {
   Serial.begin(115200);
+  Serial.setTxTimeoutMs(0);
   delay(500);
 
-  int ch = myServo.attach(SERVO_PIN);
-  if (ch == 0) {
-    Serial.println("ERROR: Failed to attach servo!");
-    while (true) { delay(1000); }
+  // Enable 5V power rail
+  if (POWER_LATCH_PIN >= 0) {
+    pinMode(POWER_LATCH_PIN, OUTPUT);
+    digitalWrite(POWER_LATCH_PIN, HIGH);
+    Serial.printf("Power latch enabled (GPIO %d)\n", POWER_LATCH_PIN);
   }
 
-  Serial.printf("EasyServo attached on pin %d (channel %d)\n", SERVO_PIN, ch);
-  Serial.printf("Active servos: %d\n", Servo::numAttached());
+  Serial.println("\n=== ESP32Servo (LEDC Peripheral) Sweep Test (GPIO 5 & 7) ===");
 
-  // Move to center
-  myServo.write(90);
-  delay(1000);
+  // Allow allocation of all timers for ESP32PWM/LEDC
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+
+  servo1.setPeriodHertz(50); // Standard 50 Hz
+  servo2.setPeriodHertz(50);
+
+  servo1.attach(SERVO_PIN1, 600, 2400); // 600-2400 µs
+  servo2.attach(SERVO_PIN2, 600, 2400);
+
+  Serial.printf("[ATTACH] ESP32Servo attached on GPIO %d and GPIO %d (50 Hz | 600-2400 µs)\n",
+                SERVO_PIN1, SERVO_PIN2);
 }
 
 void loop() {
-  // Sweep from 0° to 180°
-  for (int angle = 0; angle <= 180; angle += 5) {
-    myServo.write(angle);
-    Serial.printf("Angle: %3d° | Pulse: %d µs\n",
-                  myServo.read(), myServo.readMicroseconds());
-    delay(30);
+  for (int pos = 20; pos <= 160; pos += 1) {
+    servo1.write(pos);
+    servo2.write(pos);
+    if (pos % 20 == 0) {
+      Serial.printf("LEDC Sweep UP: %3d° | Pulse: %d µs\n", pos, servo1.readMicroseconds());
+    }
+    delay(20);
   }
 
-  delay(500);
-
-  // Sweep back from 180° to 0°
-  for (int angle = 180; angle >= 0; angle -= 5) {
-    myServo.write(angle);
-    delay(30);
+  for (int pos = 160; pos >= 20; pos -= 1) {
+    servo1.write(pos);
+    servo2.write(pos);
+    if (pos % 20 == 0) {
+      Serial.printf("LEDC Sweep DOWN: %3d° | Pulse: %d µs\n", pos, servo1.readMicroseconds());
+    }
+    delay(20);
   }
-
-  delay(500);
-
-  // Demonstrate microsecond control
-  Serial.println("\n--- Microsecond control ---");
-  myServo.writeMicroseconds(1000);  // near 0°
-  delay(1000);
-  myServo.writeMicroseconds(1500);  // center
-  delay(1000);
-  myServo.writeMicroseconds(2000);  // near 180°
-  delay(1000);
 }

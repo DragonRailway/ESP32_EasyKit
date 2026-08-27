@@ -57,11 +57,11 @@ enum class BlinkMode : uint8_t {
 
 // ── Servo config (passed to EasyServo::attach) ───────────────────────────────────
 struct ServoConfig {
-    uint16_t minUs     = 500;    ///< µs for minAngle
-    uint16_t maxUs     = 2500;   ///< µs for maxAngle
+    uint16_t minUs     = 600;    ///< µs for minAngle (0°)
+    uint16_t maxUs     = 2400;   ///< µs for maxAngle (180°)
     uint16_t centerUs  = 1500;   ///< µs for 90°
     float    minAngle  = 0.0f;
-    float    maxAngle  = 360.0f;
+    float    maxAngle  = 180.0f;
     uint16_t freq      = 50;     ///< Hz
 };
 

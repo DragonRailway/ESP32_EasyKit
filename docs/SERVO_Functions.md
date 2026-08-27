@@ -73,7 +73,7 @@ float servo.write(value, speed, kIn, kOut);
 
 **Parameters**
 
-- **value (float)**: Target **angle** (values below `500.0f`) or **microseconds** (`>= 500.0f`). Angles are clamped to the configured angle range (default 0–360°); µs values are converted through the last-attached pin's pulse range.
+- **value (float)**: Target **angle** (values below `500.0f`) or **microseconds** (`>= 500.0f`). Angles are clamped to the configured angle range (default 0–180°); µs values are converted through the last-attached pin's pulse range.
 - **speed (float)**: Movement speed in degrees/second. Use `0.0f` for instantaneous moves.
 - **kIn / ke (float)**: Easing strength at start (or for both if kOut omitted).
 - **kOut (float)**: Optional. Easing strength for the stop.

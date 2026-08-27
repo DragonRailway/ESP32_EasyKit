@@ -74,6 +74,9 @@ public:
     /// Update the easing engine. Must be called repeatedly in the loop.
     void update();
 
+    /// Returns true if an easing animation is currently in progress.
+    bool isMoving() const { return _moving; }
+
     /// Stop the servo at its current position immediately.
     void stop();
 
@@ -108,11 +111,11 @@ public:
     // ── Static utilities ─────────────────────────────────────────────────────
     /// Convert microseconds to angle.
     static float usToAngle(int us, int minUs, int maxUs, float minAngle, float maxAngle);
-    static float usToAngle(int us, int minUs = 500, int maxUs = 2500);
+    static float usToAngle(int us, int minUs = 600, int maxUs = 2400);
 
     /// Convert angle to microseconds.
     static int angleToUs(float angle, int minUs, int maxUs, float minAngle, float maxAngle);
-    static int angleToUs(float angle, int minUs = 500, int maxUs = 2500);
+    static int angleToUs(float angle, int minUs = 600, int maxUs = 2400);
 
     /// Number of servo pins currently attached across all instances.
     static uint8_t numAttached();
@@ -127,9 +130,10 @@ private:
 
     struct PinEntry {
         int pin = -1;
-        uint16_t minUs   = 500;
-        uint16_t maxUs   = 2500;
+        uint16_t minUs   = 600;
+        uint16_t maxUs   = 2400;
         uint16_t centerUs = 1500;
+        uint32_t lastTicks = 0xFFFFFFFF;
 #ifdef SOC_MCPWM_SUPPORTED
         mcpwm_cmpr_handle_t cmpr = nullptr;
         mcpwm_gen_handle_t  gen  = nullptr;
@@ -147,6 +151,7 @@ private:
 
     EasyKit::ServoConfig _config;
     PinEntry _pins[MAX_PINS];
+    uint32_t _timerResHz   = 1000000;
     uint8_t  _pinCount     = 0;
     int      _lastPin      = -1;  ///< Most recently attached pin (read-back target)
     int      _currentUs    = 1500;
@@ -160,6 +165,7 @@ private:
     float    _currentAngle = 90.0f;
     uint32_t _startTimeMS  = 0;
     uint32_t _durationMS   = 0;
+    uint32_t _lastUpdateMS = 0;
     float    _kIn          = 0.0f;
     float    _kOut         = 0.0f;
     float    _speed        = 0.0f;

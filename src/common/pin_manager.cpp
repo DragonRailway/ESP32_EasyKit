@@ -21,10 +21,14 @@ void GlobalPinManager::claimPin(uint8_t pin, IPinOwner* newOwner) {
     
     // 2. Arduino Core Periman Integration
 #ifdef HAS_PERIMAN
-    // IMPORTANT: We use ESP32_BUS_TYPE_GPIO (Type 2) to signify generic use.
-    // My previous use of ESP32_BUS_TYPE_MAX caused conflicts with the PPP Modem driver.
-    perimanSetPinBus(pin, ESP32_BUS_TYPE_GPIO, (void*)newOwner, -1, -1);
-    perimanSetPinBusExtraType(pin, newOwner->getPeripheralName());
+    // If the owner manages its own peripheral matrix (e.g. MCPWM), do NOT force ESP32_BUS_TYPE_GPIO
+    // because perimanSetPinBus(..., ESP32_BUS_TYPE_GPIO) resets the pin's GPIO matrix out to SIG_GPIO_OUT_IDX.
+    const char* periph = newOwner->getPeripheralName();
+    bool isMcpwm = (periph && (strcmp(periph, "MCPWM_SERVO") == 0 || strcmp(periph, "MCPWM_MOTOR") == 0));
+    if (!isMcpwm) {
+        perimanSetPinBus(pin, ESP32_BUS_TYPE_GPIO, (void*)newOwner, -1, -1);
+        perimanSetPinBusExtraType(pin, periph);
+    }
 #endif
 
     // 3. Register the new owner internally
@@ -37,7 +41,11 @@ void GlobalPinManager::releasePin(uint8_t pin, IPinOwner* currentOwner) {
     if (_owners[pin] == currentOwner) {
         _owners[pin] = nullptr;
 #ifdef HAS_PERIMAN
-        perimanClearPinBus(pin);
+        const char* periph = currentOwner->getPeripheralName();
+        bool isMcpwm = (periph && (strcmp(periph, "MCPWM_SERVO") == 0 || strcmp(periph, "MCPWM_MOTOR") == 0));
+        if (!isMcpwm) {
+            perimanClearPinBus(pin);
+        }
 #endif
     }
 }

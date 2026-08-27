@@ -8,3 +8,8 @@ examples/**/build/
 .idea/
 *.swp
 .DS_Store
+
+.*/
+
+# openspec
+archive/

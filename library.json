@@ -5,7 +5,7 @@
   "keywords": "esp32, pwm, mcpwm, ledc, servo, motor, led, animation, easing, fpu",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rambros3d/ESP32_EasyKit.git"
+    "url": "https://github.com/DragonRailway/ESP32_EasyKit.git"
   },
   "authors": [
     {
