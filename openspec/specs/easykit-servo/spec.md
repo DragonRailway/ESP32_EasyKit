@@ -3,17 +3,20 @@
 ## Purpose
 
 Defines the `EasyServo` class behavior of the ESP32_EasyKit library: MCPWM-based servo pulse generation, microsecond pulse accuracy, frequency reconfiguration, attach semantics, and multi-pin support (one instance driving up to 3 servo pins in lockstep). Firmware-consumer requirements (how a vehicle controller wires servos) live in the consuming project's own OpenSpec repository.
-
 ## Requirements
-
 ### Requirement: EasyServo Pulse Timing Correctness
 
-`EasyServo` SHALL generate servo pulse widths in microseconds accurately: a `writeMicroseconds(1500)` call SHALL produce a 1500 µs high pulse at the configured refresh rate.
+`EasyServo` SHALL generate servo pulse widths in microseconds accurately across all supported CPU clock frequencies (80 MHz, 160 MHz, and 240 MHz): a `writeMicroseconds(1500)` call SHALL produce an accurate 1500 µs high pulse at the configured refresh rate regardless of the system CPU clock setting.
 
 #### Scenario: Microsecond pulse accuracy
 
 - **WHEN** a servo is attached at 50 Hz and commanded to 1500 µs
 - **THEN** the MCPWM output produces a 1500 µs pulse every 20 ms
+
+#### Scenario: Pulse accuracy across CPU frequencies
+
+- **WHEN** the CPU frequency is configured to 80 MHz, 160 MHz, or 240 MHz and an `EasyServo` is attached at 50 Hz with 1500 µs pulse width
+- **THEN** the MCPWM timer utilizes a stable clock source (XTAL) and emits an accurate 1500 µs pulse without frequency drift or doubling
 
 #### Scenario: Frequency reconfiguration
 
@@ -70,3 +73,4 @@ For instances with exactly one attached pin, behavior SHALL remain compatible wi
 
 - **WHEN** a consuming project that attaches exactly one pin per `EasyServo` instance compiles against the updated library
 - **THEN** the build succeeds and existing steering/ESC servo behavior is unchanged
+

@@ -80,7 +80,7 @@ EasyKit::Result EasyServo::attach(int pin, const EasyKit::ServoConfig& config) {
         }
 
         timer_cfg.group_id      = _slot.unit;
-        timer_cfg.clk_src       = MCPWM_TIMER_CLK_SRC_DEFAULT;
+        timer_cfg.clk_src       = MCPWM_TIMER_CLK_SRC_XTAL;
         timer_cfg.resolution_hz = _timerResHz;
         timer_cfg.period_ticks  = _timerResHz / config.freq;
         timer_cfg.count_mode    = MCPWM_TIMER_COUNT_MODE_UP;
