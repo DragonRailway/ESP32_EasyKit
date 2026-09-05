@@ -85,7 +85,7 @@ EasyKit::Result EasyServo::attach(int pin, const EasyKit::ServoConfig& config) {
 #else
         timer_cfg.clk_src       = MCPWM_TIMER_CLK_SRC_DEFAULT;
 #endif
-        timer_cfg.resolution_hz = _timerResHz;
+        timer_cfg.resolution_hz = EasyKit::getMcpwmTimerResolution(_timerResHz);
         timer_cfg.period_ticks  = _timerResHz / config.freq;
         timer_cfg.count_mode    = MCPWM_TIMER_COUNT_MODE_UP;
         if (mcpwm_new_timer(&timer_cfg, &_timer) != ESP_OK) return EasyKit::Result::ERR_HW_FAULT;

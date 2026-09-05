@@ -18,8 +18,35 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <Arduino.h>
 
 namespace EasyKit {
+
+/**
+ * @brief Computes the compensated resolution_hz for mcpwm_new_timer.
+ *
+ * On SoCs without XTAL support for MCPWM (such as ESP32-S3 and classic ESP32),
+ * the MCPWM peripheral is clocked from PLL_F160M. The ESP-IDF driver assumes a
+ * fixed 160 MHz source clock when configuring the timer prescaler divider.
+ * When CPU frequency is reduced (e.g., 80 MHz for power savings), the actual
+ * peripheral clock drops to match the CPU clock.
+ *
+ * Scaling resolution_hz by (160 / actual_cpu_mhz) compensates the prescaler
+ * so the actual hardware tick rate matches the desired rate.
+ */
+inline uint32_t getMcpwmTimerResolution(uint32_t desired_res_hz) {
+#if defined(SOC_MCPWM_SUPPORT_XTAL)
+    // Hardware supports XTAL directly; XTAL is independent of CPU clock frequency.
+    return desired_res_hz;
+#else
+    uint32_t cpu_mhz = getCpuFrequencyMhz();
+    if (cpu_mhz == 0 || cpu_mhz >= 160) {
+        return desired_res_hz;
+    }
+    return (uint32_t)((uint64_t)desired_res_hz * 160ULL / cpu_mhz);
+#endif
+}
+
 
 class MCPWMManager {
 public:
