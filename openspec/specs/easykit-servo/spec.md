@@ -16,7 +16,7 @@ Defines the `EasyServo` class behavior of the ESP32_EasyKit library: MCPWM-based
 #### Scenario: Pulse accuracy across CPU frequencies
 
 - **WHEN** the CPU frequency is configured to 80 MHz, 160 MHz, or 240 MHz and an `EasyServo` is attached at 50 Hz with 1500 µs pulse width
-- **THEN** the MCPWM timer utilizes a stable clock source (XTAL) and emits an accurate 1500 µs pulse without frequency drift or doubling
+- **THEN** the MCPWM timer utilizes clock compensation (scaling timer resolution to compensate for PLL_F160M clock changes, or XTAL where supported) and emits an accurate 1500 µs pulse without frequency drift or doubling
 
 #### Scenario: Frequency reconfiguration
 
