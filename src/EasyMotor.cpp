@@ -14,6 +14,45 @@
 #include "common/mcpwm_manager.h"
 #endif
 
+namespace {
+class MotorEnablePinTracker : public EasyKit::IPinOwner {
+public:
+    void claim(uint8_t pin) {
+        if (pin >= 64) return;
+        if (_refCount[pin] == 0) {
+            pinMode(pin, OUTPUT);
+            digitalWrite(pin, HIGH);
+            EasyKit::GlobalPinManager::claimPin(pin, this);
+        }
+        _refCount[pin]++;
+    }
+
+    void release(uint8_t pin) {
+        if (pin >= 64) return;
+        if (_refCount[pin] > 0) {
+            _refCount[pin]--;
+            if (_refCount[pin] == 0) {
+                digitalWrite(pin, LOW);
+                EasyKit::GlobalPinManager::releasePin(pin, this);
+            }
+        }
+    }
+
+    void onPinStolen(uint8_t pin) override {
+        if (pin < 64) {
+            _refCount[pin] = 0;
+        }
+    }
+
+    const char* getPeripheralName() const override { return "MOTOR_ENABLE"; }
+
+private:
+    uint8_t _refCount[64] = {0};
+};
+
+static MotorEnablePinTracker s_enableTracker;
+} // anonymous namespace
+
 EasyMotor::EasyMotor() {
     _config.freq = 20000; // 20kHz default for silent operation
     _config.driverType = DriverType::DRIVER_2PWM;
@@ -61,6 +100,9 @@ EasyKit::Result EasyMotor::begin(DriverType type, uint8_t pin1, uint8_t pin2, bo
 }
 
 EasyKit::Result EasyMotor::begin(const EasyKit::EasyMotorConfig& config) {
+    if (_attached) {
+        end();
+    }
     _config = config;
     _inverted = _config.inverted;
 
@@ -125,9 +167,7 @@ EasyKit::Result EasyMotor::begin(const EasyKit::EasyMotorConfig& config) {
     }
 
     if (_config.enablePin != 255) {
-        pinMode(_config.enablePin, OUTPUT);
-        digitalWrite(_config.enablePin, HIGH);
-        EasyKit::GlobalPinManager::claimPin(_config.enablePin, this);
+        s_enableTracker.claim(_config.enablePin);
     }
 
     _attached = true;
@@ -152,7 +192,9 @@ void EasyMotor::end() {
 #endif
     EasyKit::GlobalPinManager::releasePin(_config.pwm1Pin, this);
     if (_config.pwm2Pin != 255) EasyKit::GlobalPinManager::releasePin(_config.pwm2Pin, this);
-    if (_config.enablePin != 255) EasyKit::GlobalPinManager::releasePin(_config.enablePin, this);
+    if (_config.enablePin != 255) {
+        s_enableTracker.release(_config.enablePin);
+    }
     _attached = false;
 }
 
@@ -281,5 +323,7 @@ void EasyMotor::run(EasyKit::MotorDir dir, uint8_t speed) {
 }
 
 void EasyMotor::onPinStolen(uint8_t pin) {
-    end();
+    if (pin == _config.pwm1Pin || pin == _config.pwm2Pin) {
+        end();
+    }
 }
